@@ -1,25 +1,38 @@
 #include "oss.h" //contains all other includes necessary, macro definations, and function prototypes
 
 
+
+
 //Global Variables
 
 char fileName[10] = "data.log";
 FILE * fp;
 pid_t childPid; //pid id for child processes
 unsigned int *simClock; // simulated system clock  simClock [0] = seconds, simClock[1] = nanoseconds
+descriptor *resourceTable;
+int bitVector[18];
 
 void terminateSharedResources();
 static int setperiodic(double sec);
+
+sem_t sem;
 
 
 int main (int argc, char *argv[]) {
 	//keys
 	messageQueueKey = 59569;
 	keySimClock = 59566;
+	semaphoreKey = 59567;
+	descriptorKey = 59568;
 	int totalProcessesCreated = 0; //keeps track of all processes created	
 	int processCount = 0; //current number of processes
 	int processLimit = 100; //max number of processes allowed by assignment parameters
 	double terminateTime = 3; //used by setperiodic to terminate program
+	unsigned int newProcessTime[2] = {0,0};
+	bool spawnNewProcess = false;
+	int RTIndex;
+	Queue* blockedQueue = createQueue(maxProcesses);
+
 //open file for writing	
 	fp = fopen(fileName, "w");
 //seed random number generator
@@ -41,40 +54,109 @@ int main (int argc, char *argv[]) {
 		perror("oss: could not create shared memory for simClock");
 		return 1;
 	}
-//Attach to shared memory and initalize clock to 0
+	if ((shmidDescriptor = shmget(descriptorKey, (sizeof(descriptor)), IPC_CREAT | 0666)) == -1){
+		perror("oss: could not create shared memory for descriptor");
+		return 1;
+	}
+//Initalize semaphore
+	if ((sem_init(&sem, 1, 0)) == -1){
+		perror("oss: could not init sem");
+	}	
+//Attach to shared memory
 	simClock = shmat(shmidSimClock, NULL, 0);
-	
+	simClock[0] = 0; //nanoseconds
+	simClock[1] = 0; //seconds	
+	resourceTable = shmat(shmidDescriptor, NULL, 0);	
 //create mail box
 	if ((messageBoxID = msgget(messageQueueKey, IPC_CREAT | 0666)) == -1){
 		perror("oss: Could not create child mail box");
 		return 1;
 	}
 
-int counter = 0;
+	int counter = 0;
 
-while(counter < 20){ //setting max loops because program will crash if left to run infinitely.
-		//if its time for a new process fork child process
-		if ((childPid = fork()) == -1){ 
-			perror("oss: failed to fork child");
-                        // clena out memory and terminate or continue on but no new process
-		}	
+
+//populate number of resources in the resourcTable
+	int index;
+	for (index = 0; index < maxResources; index++){
+		(*resourceTable).numResources[index] = (rand() % 10) + 1;
+	}
+
+	//while(counter < 2){ //setting max loops during development
+
+		if ((simClock[1] == newProcessTime[1] && simClock[0] >= newProcessTime[1]) || simClock[1] >= simClock[1]){
+				
+		}
+
+		//find available location in the resouceTable
+		if (RTIndex = FindIndex(bitVector, maxProcesses, 0) == -1){
+			printf("Max processes reached");
+//			continue;
+		} else {
+			//if there was an availble location in the resourceTable, set spawnNewProcess flag to true
+			spawnNewProcess = true;
+			//determine max claim on a resource
+			(*resourceTable).maxCanRequest[RTIndex] = (rand() % 3) +1;
+			bitVector[RTIndex] = 1;
+			}
+
+
+
+		if (spawnNewProcess = true){
+			//if its time for a new process fork child process
+			if ((childPid = fork()) == -1){ 
+				perror("oss: failed to fork child");
+	                        // clena out memory and terminate or continue on but no new process
+			}	
+	
+			processCount++;
+		}
+		
 		//exec child process
 		if (childPid < 0){
-			perror("pss: failed to exec");
+			perror("oss: failed to exec");
 			exit(1);
 		} else 	if (childPid == 0){
-			//child process
+			(*resourceTable).pidArray[RTIndex] = getpid(); //store childpid
+			message.RTLocation = RTIndex;
+			message.mesg_type = getpid();
+			printf("IN OSS - %d\n", message.mesg_type);
+		if(msgsnd(messageBoxID, &message, sizeof(message), IPC_NOWAIT) ==  -1){
+			perror("oss: failed to send message to user");
+		}
+			printf("Launching\n");
+			execl("./user", NULL);
 		} else {
-			//parent process sets priority and initalizes the PCBTable Entry
+			
 		}		
-} //outer while loop
 
+	//get new process time between 1 and 500 milliseconds
+		newProcessTime[0] = (rand() % 500000000) + 1000000 + simClock[0];
+		 
 
+		//receive a message
+		if (msgrcv(messageBoxID, &message, sizeof(message), getpid(), 0) == -1){
+			perror("oss: Failed to received a message");
+		}
+
+		if (message.terminate = true){
+			//set bitVector for location that terminated to 0
+			bitVector[message.RTLocation] = 0;
+			//add resources being freed to the available resources.  zero out resources from the 2d allocated array
+			for(index = 0; index < maxProcesses; index++){
+				(*resourceTable).availableResources[index] += (*resourceTable).allocated[message.RTLocation][index];
+				(*resourceTable).allocated[message.RTLocation][index] = 0;
+			}
+		}
+
+counter++;
+//} //outer while loop
+
+wait(NULL);
 
 //free  up memory queue and shared memory
 terminateSharedResources();
-
-kill(0, SIGKILL); //without this, some user processes continue to run even after OSS terminates
+//kill(0, SIGKILL); //without this, some user processes continue to run even after OSS terminates
 return 0;
 }
 
@@ -99,14 +181,17 @@ void handle(int signo){
 		printf("*********Signal was received************\n");
 		kill(0, SIGKILL);
 		wait(NULL);
-		terminateSharedResources();
+//		terminateSharedResources();
 		exit(0);
 	}
 }
 
 
 void terminateSharedResources(){
+		sem_destroy(&sem);
 		shmctl(shmidSimClock, IPC_RMID, NULL);
+		shmctl(shmidSemaphore, IPC_RMID, NULL);
+		shmctl(shmidDescriptor, IPC_RMID, NULL);
 		msgctl(messageBoxID, IPC_RMID, NULL);
 		shmdt(simClock);	
 }
@@ -125,7 +210,7 @@ Queue* createQueue(unsigned capacity)
 int isFull(Queue* queue){
 	  return (queue->size == queue->capacity); 
  }
-  
+ 
 int isEmpty(Queue* queue){
 	return (queue->size == 0);
  }
@@ -160,6 +245,22 @@ int rear(Queue* queue){
 }
 
 
+int FindIndex(int bitVector[], int size, int value){
+	int indexFound = 0;
+	int index;
+	for (index = 0; index < size; index++){
+		if (bitVector[index] == value){
+			indexFound = 1;
+			break;
+		}
+	}
+	if (indexFound == 1){
+		return index;
+	} else {
+		return -1;	
+	}
+
+}
 /*
  KEPT FOR FUTURE USE
 //getopt
