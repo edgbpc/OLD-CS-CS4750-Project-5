@@ -17,17 +17,36 @@
 #include <errno.h>
 #include <stdbool.h>
 #include <limits.h>
+#include <semaphore.h>
 
-//macro :definations
+//macro definations
 
 #define SHM_SIZE 100
 #define BILLION 1000000000L //taken from book
 
+//governs maximum amouut of processes and resources.  change to increase/decrease
+#define maxProcesses 18
+#define maxResources 20
 
 //structures
 
 
 typedef struct {
+	int numResources[maxResources];			//stores how many of each resource there is
+	int allocated[maxProcesses][maxResources];	//stores how many resources each processes allocated 
+	int maxCanRequest[maxProcesses]; 		//maximum a process can request
+	int availableResources[maxResources];		//maximum available resources
+	int pidArray[maxProcesses];			//keep track of child pids
+} descriptor;
+
+typedef struct {
+	long mesg_type;				//controls who cam retreive a message
+	int RTLocation;
+	int pid;
+	int release;
+	int request;
+	bool terminate;
+	bool granted;
 } Message;
 
 typedef struct
@@ -49,21 +68,21 @@ int dequeue(Queue* queue);
 int front(Queue* queue);
 int rear(Queue* queue);
 //variables
-//
-//
 Message message;
 int messageBoxID;
 int shmidSimClock;
-int shmidPCB;
+int shmidSemaphore;
+int shmidDescriptor;
 
 //message queue key
 key_t messageQueueKey;
 
 //Shared Memory Keys
 key_t keySimClock;
-key_t keyPCB;
+key_t semaphoreKey;
+key_t descriptorKey;
 
-
+//semaphore
 
 
 #endif
