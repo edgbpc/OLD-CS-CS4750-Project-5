@@ -10,12 +10,18 @@ FILE * fp;
 pid_t childPid; //pid id for child processes
 unsigned int *simClock; // simulated system clock  simClock [0] = seconds, simClock[1] = nanoseconds
 descriptor *resourceTable;
-int bitVector[18];
+int bitVector[maxProcesses];
 
 void terminateSharedResources();
 static int setperiodic(double sec);
+void convertTime(unsigned int simClock[]);
+int FindIndex(int value);
+void printMaxCanRequestTable();
+void printAllocationTable();
+void calculateNeed(int need[maxProcesses][maxResources], int maxm[maxProcesses][maxResources], int allot[maxProcesses][maxResources]);
 
-sem_t sem;
+
+//sem_t sem;
 
 
 int main (int argc, char *argv[]) {
@@ -27,11 +33,11 @@ int main (int argc, char *argv[]) {
 	int totalProcessesCreated = 0; //keeps track of all processes created	
 	int processCount = 0; //current number of processes
 	int processLimit = 100; //max number of processes allowed by assignment parameters
-	double terminateTime = 3; //used by setperiodic to terminate program
+	double terminateTime = 10; //used by setperiodic to terminate program
 	unsigned int newProcessTime[2] = {0,0};
-	bool spawnNewProcess = false;
 	int RTIndex;
 	Queue* blockedQueue = createQueue(maxProcesses);
+	bool messageReceived;
 
 //open file for writing	
 	fp = fopen(fileName, "w");
@@ -59,9 +65,9 @@ int main (int argc, char *argv[]) {
 		return 1;
 	}
 //Initalize semaphore
-	if ((sem_init(&sem, 1, 0)) == -1){
-		perror("oss: could not init sem");
-	}	
+//	if ((sem_init(&sem, 1, 0)) == -1){
+//		perror("oss: could not init sem");
+//	}	
 //Attach to shared memory
 	simClock = shmat(shmidSimClock, NULL, 0);
 	simClock[0] = 0; //nanoseconds
@@ -75,71 +81,94 @@ int main (int argc, char *argv[]) {
 
 	int counter = 0;
 
-
 //populate number of resources in the resourcTable
 	int index;
 	for (index = 0; index < maxResources; index++){
 		(*resourceTable).numResources[index] = (rand() % 10) + 1;
 	}
+	while(1){ //setting max loops during development
+		//check to see if its time for a new process to start
+		if ((simClock[1] == newProcessTime[1] && simClock[0] >= newProcessTime[0]) || simClock[1] >= simClock[1]){
 
-	//while(counter < 2){ //setting max loops during development
-
-		if ((simClock[1] == newProcessTime[1] && simClock[0] >= newProcessTime[1]) || simClock[1] >= simClock[1]){
-				
-		}
-
-		//find available location in the resouceTable
-		if (RTIndex = FindIndex(bitVector, maxProcesses, 0) == -1){
-			printf("Max processes reached");
-//			continue;
-		} else {
-			//if there was an availble location in the resourceTable, set spawnNewProcess flag to true
-			spawnNewProcess = true;
-			//determine max claim on a resource
-			(*resourceTable).maxCanRequest[RTIndex] = (rand() % 3) +1;
-			bitVector[RTIndex] = 1;
-			}
-
-
-
-		if (spawnNewProcess = true){
-			//if its time for a new process fork child process
-			if ((childPid = fork()) == -1){ 
-				perror("oss: failed to fork child");
-	                        // clena out memory and terminate or continue on but no new process
-			}	
-	
-			processCount++;
-		}
-		
-		//exec child process
-		if (childPid < 0){
-			perror("oss: failed to exec");
-			exit(1);
-		} else 	if (childPid == 0){
-			(*resourceTable).pidArray[RTIndex] = getpid(); //store childpid
-			message.RTLocation = RTIndex;
-			message.mesg_type = getpid();
-			printf("IN OSS - %d\n", message.mesg_type);
-		if(msgsnd(messageBoxID, &message, sizeof(message), IPC_NOWAIT) ==  -1){
-			perror("oss: failed to send message to user");
-		}
-			printf("Launching\n");
-			execl("./user", NULL);
-		} else {
+			bool spawnNewProcess = false;
+			//find available location in the resouceTable
 			
-		}		
+			for (index = 0; index < maxProcesses; index++){
+				if(bitVector[index] == 0){
+					int jindex;
+					for (jindex = 0; jindex < maxResources; jindex++){
+						(*resourceTable).maxCanRequest[index][jindex] = (rand()% 3) + 1;
+					}
+						spawnNewProcess = true;
+						bitVector[index] = 1;
+						childPid = fork();
+						break;
+				}
+	//		printMaxCanRequestTable();
+			}
+			if (spawnNewProcess == true){
+				if(childPid == -1){
+					perror("OSS:  Failed to fork child\n");
+					kill(getpid(), SIGINT);
+				}
+				
+				if(childPid == 0){
+					//convert index to string to pass to User so it knows its location in the resouceTable
+					char intBuffer[3];
+					sprintf(intBuffer, "%d", index);
+					//printf("%s", intBuffer);
+					execl("./user", "user", intBuffer, NULL);
+			//		return 1;
+				} 
 
-	//get new process time between 1 and 500 milliseconds
-		newProcessTime[0] = (rand() % 500000000) + 1000000 + simClock[0];
-		 
+				processCount++;
+				(*resourceTable).pidArray[index] = childPid; //storing pid for future use.  not sure if going to use
+			}
+			
+			//set next time for a process
+			//get new process time between 1 and 500 milliseconds
+			//increments nanoseconds
+			//copies current second time
+			//convert nanoseconds to seconds
 
+			newProcessTime[0] = (rand() % 500000000) + 1000000 + simClock[0];
+			newProcessTime[1] = simClock[1];
+			convertTime(simClock);
+		
+	} //end if statement for checking if its time for new process
+		
 		//receive a message
-		if (msgrcv(messageBoxID, &message, sizeof(message), getpid(), 0) == -1){
-			perror("oss: Failed to received a message");
+//		printf("OSS is waiting for message\n");
+		msgrcv(messageBoxID, &message, sizeof(message), getpid(), IPC_NOWAIT);
+
+		
+		printf("OSS received %d and %d\n", message.RTLocation, message.request);
+		
+		//if message contains request 
+		if (message.request != 0){
+//			printf("OSS received message to claim %d\n", message.request);
+//
+//			//increment clock to run banker's
+			simClock[0] += 100000;
+			convertTime(simClock);
+		
+			//grant a resource request
+			(*resourceTable).allocated[message.RTLocation][message.request-1] += 1;
+
+			message.mesg_type = (*resourceTable).pidArray[message.RTLocation];
+			message.granted = true;
+		
+			if(msgsnd(messageBoxID, &message, sizeof(message), 0) ==  -1){
+				perror("oss: failed to send message to user");
+			}
+		}
+	//if message contains release
+		if (message.release != 0){
+			(*resourceTable).allocated[message.RTLocation][message.release-1] -= 1;
 		}
 
-		if (message.terminate = true){
+		//if message contains terminate
+		if (message.terminate == true){
 			//set bitVector for location that terminated to 0
 			bitVector[message.RTLocation] = 0;
 			//add resources being freed to the available resources.  zero out resources from the 2d allocated array
@@ -148,17 +177,20 @@ int main (int argc, char *argv[]) {
 				(*resourceTable).allocated[message.RTLocation][index] = 0;
 			}
 		}
+		
+		//increment clock
+		simClock[0] += 1000000;
+		convertTime(simClock);
+	
+	} //outer while iloop
 
-counter++;
-//} //outer while loop
-
-wait(NULL);
-
-//free  up memory queue and shared memory
-terminateSharedResources();
-//kill(0, SIGKILL); //without this, some user processes continue to run even after OSS terminates
-return 0;
+} //end main()
+//convertTime
+void convertTime(unsigned int simClock[]){
+	simClock[1] += simClock[0]/1000000000;
+	simClock[0] = simClock[0]%1000000000;
 }
+
 
 //TAKEN FROM BOOK
 static int setperiodic(double sec) {
@@ -179,21 +211,23 @@ static int setperiodic(double sec) {
 void handle(int signo){
 	if (signo == SIGINT || signo == SIGALRM){
 		printf("*********Signal was received************\n");
+		terminateSharedResources();
 		kill(0, SIGKILL);
 		wait(NULL);
-//		terminateSharedResources();
 		exit(0);
 	}
 }
 
 
 void terminateSharedResources(){
-		sem_destroy(&sem);
+	//	sem_destroy(&sem);
+		printAllocationTable();
 		shmctl(shmidSimClock, IPC_RMID, NULL);
-		shmctl(shmidSemaphore, IPC_RMID, NULL);
+	//	shmctl(shmidSemaphore, IPC_RMID, NULL);
 		shmctl(shmidDescriptor, IPC_RMID, NULL);
 		msgctl(messageBoxID, IPC_RMID, NULL);
 		shmdt(simClock);	
+		shmdt(resourceTable);
 }
 //Queue code comes from https://www.geeksforgeeks.org/queue-set-1introduction-and-array-implementation
 
@@ -244,23 +278,101 @@ int rear(Queue* queue){
         return queue->array[queue->rear];
 }
 
+//this code came from https://stackoverflow.com/questions/25003961/find-array-index-if-given-value
+int FindIndex(int value){
+	int i = 0;
 
-int FindIndex(int bitVector[], int size, int value){
-	int indexFound = 0;
-	int index;
-	for (index = 0; index < size; index++){
-		if (bitVector[index] == value){
-			indexFound = 1;
-			break;
+	while (i < maxProcesses && bitVector[i] != value) ++i;
+	return (i == maxProcesses ? -1 : i );
+	}
+
+void printMaxCanRequestTable(){
+	printf("\t\t\t max Can Request table\n");
+	printf("Columns represent each resource available\n");
+	int i;
+	int j;
+	for (i = 0; i < maxProcesses; i++){
+		printf("P%d\t", i);
+		for (j = 0; j < maxResources; j++){
+			printf(" %d", (*resourceTable).maxCanRequest[i][j]);
+		}
+	printf("\n");
+	}
+}
+
+void printAllocationTable(){
+	printf("\t\t\t Allocation Table \n");
+	printf("Columns represent each resource available\n");
+	int i;
+	int j;
+	for (i = 0; i < maxProcesses; i++){
+		printf("P%d\t", i);
+		for (j = 0; j < maxResources; j++){
+			printf(" %d", (*resourceTable).allocated[i][j]);
+		}
+	printf("\n");
+	}
+}
+
+//code from https://www.geeksforgeeks.org/program-bankers-algorithm-set-1-safety-algorithm/
+void calculateNeed(int need[maxProcesses][maxResources], int maxm[maxProcesses][maxResources], int allot[maxProcesses][maxResources]){
+	int i,j;
+	for (i = 0; i < maxProcesses; i++){
+		for (j = 0; j < maxResources; j++){
+			need[i][j] = maxm[i][j] - allot[i][j];
 		}
 	}
-	if (indexFound == 1){
-		return index;
-	} else {
-		return -1;	
+}
+bool isSafe(int processes[], int avail[], int maxm[][maxResources], int allot[][maxResources]){
+	int index;
+	int need[maxProcesses][maxResources];
+	calculateNeed(need, maxm, allot);
+
+	bool finish[maxProcesses] = {0};
+
+	int safeSeq[maxProcesses];
+
+	int work[maxResources];
+	int i;
+	for (i = 0; i < maxResources; i++){
+		work[i] = avail[i];
 	}
 
+	int count = 0;
+	while (count < maxProcesses){
+		int p;
+		bool found = false;
+		for (p = 0; p < maxProcesses; p++){
+			if (finish[p] == 0) {
+				int j;
+				for (j = 0; j < maxResources; j++){
+					if(need[p][j] > work[j]){
+						break;
+					}
+				}
+			if (j == maxResources){
+				int k;
+				for (k = 0; k < maxResources; k++){
+					work[k] += allot[p][k];
+				}
+				safeSeq[count++] = p;
+				finish[p] = 1;
+				found = true;
+			}
+		}
+	}
+
+	if (found == false){
+			printf("System is not in safe state\n");
+			return false;
+		}
+	}
+
+	printf("System is in safe state\n");
+
+	return true;
 }
+
 /*
  KEPT FOR FUTURE USE
 //getopt
