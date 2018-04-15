@@ -34,7 +34,7 @@
 typedef struct {
 	int numResources[maxResources];			//stores how many of each resource there is
 	int allocated[maxProcesses][maxResources];	//stores how many resources each processes allocated 
-	int maxCanRequest[maxProcesses]; 		//maximum a process can request
+	int maxCanRequest[maxProcesses][maxResources]; 		//maximum a process can request
 	int availableResources[maxResources];		//maximum available resources
 	int pidArray[maxProcesses];			//keep track of child pids
 } descriptor;
