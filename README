@@ -1,0 +1,13 @@
+
+I kept working on this through the weekend but I think its time to stop.
+
+there's no option to turn off verbose.  
+
+the safety algorithm isn't functioning correctly.  it just says everything is unsafe.
+
+I feel like what I've written should work but I can't figure out where the problem is.
+
+the blocking queue isn't flushed out right because the safety algorithm never lets anything get assigned.
+
+I'll probably keep working on this one as Project 7
+
