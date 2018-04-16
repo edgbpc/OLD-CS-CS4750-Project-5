@@ -21,7 +21,7 @@
 
 //macro definations
 
-#define SHM_SIZE 100
+#define SHM_SIZE 2000
 #define BILLION 1000000000L //taken from book
 
 //governs maximum amouut of processes and resources.  change to increase/decrease
@@ -32,17 +32,27 @@
 
 
 typedef struct {
+	int resourceRequest;
+	int resourceRelease;
+	bool blocked;
+	int maxClaimsAllowed[maxResources];
+	int RTLocation;
+} processes;
+typedef struct {
 	int numResources[maxResources];			//stores how many of each resource there is
 	int allocated[maxProcesses][maxResources];	//stores how many resources each processes allocated 
 	int maxCanRequest[maxProcesses][maxResources]; 		//maximum a process can request
-	int availableResources[maxResources];		//maximum available resources
+	int available[maxResources];		//maximum available resources
 	int pidArray[maxProcesses];			//keep track of child pids
+	processes process[maxProcesses];
 } descriptor;
+
+
 
 typedef struct {
 	long mesg_type;				//controls who cam retreive a message
-	int RTLocation;
 	int pid;
+	int RTLocation;
 	int release;
 	int request;
 	bool terminate;
@@ -54,6 +64,8 @@ typedef struct
     int front, rear, size;
     unsigned capacity;
     int* array;
+    int RTLocation;
+    int pid;
 } Queue;
 
 //prototypes
